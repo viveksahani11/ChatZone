@@ -1,6 +1,6 @@
 import Cropper from "react-easy-crop";
 import { useState, useCallback } from "react";
-import getCroppedImg from "../utils/cropImage"; 
+import getCroppedImg from "../utils/cropimage"; 
 
 const ImageCropModal = ({ image, onCropDone, onClose }) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
