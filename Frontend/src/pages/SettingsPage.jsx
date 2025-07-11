@@ -1,5 +1,5 @@
 import { THEMES } from "../constants";
-import { useThemeStore } from "../store/UseThemeStore";
+import { useThemeStore } from "../store/useThemeStore";
 import { Send } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
