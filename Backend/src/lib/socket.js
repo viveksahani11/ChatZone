@@ -7,16 +7,17 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:3000", "http://localhost:5173"], // ✅ FIXED: Added both ports
+    methods: ["GET", "POST"],
   },
 });
 
-export function getReceiverSocketId(userId) {
-  return userSocketMap[userId];
-}
-
-// used to store online users
+// Store online users
 const userSocketMap = {}; // {userId: socketId}
+
+export const getReceiverSocketId = (receiverId) => {
+  return userSocketMap[receiverId];
+};
 
 io.on("connection", (socket) => {
   console.log("A user connected", socket.id);
@@ -26,6 +27,17 @@ io.on("connection", (socket) => {
 
   // io.emit() is used to send events to all the connected clients
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
+
+  // ✅ TYPING INDICATORS
+  socket.on("typing", ({ receiverId, isTyping }) => {
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    if (receiverSocketId) {
+      socket.to(receiverSocketId).emit("userTyping", {
+        senderId: userId,
+        isTyping
+      });
+    }
+  });
 
   socket.on("disconnect", () => {
     console.log("A user disconnected", socket.id);

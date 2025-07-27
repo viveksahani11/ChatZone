@@ -3,7 +3,9 @@ import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
-const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
+// ✅ FIXED: Separate BASE_URL for API and Socket
+const API_BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
+const SOCKET_BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -17,7 +19,6 @@ export const useAuthStore = create((set, get) => ({
   checkAuth: async () => {
     try {
       const res = await axiosInstance.get("/auth/check");
-
       set({ authUser: res.data });
       get().connectSocket();
     } catch (error) {
@@ -48,10 +49,11 @@ export const useAuthStore = create((set, get) => ({
       const res = await axiosInstance.post("/auth/login", data);
       set({ authUser: res.data });
       toast.success("Logged in successfully");
-
       get().connectSocket();
     } catch (error) {
-      toast.error(error.response.data.message);
+      console.error("Login error:", error);
+      const errorMessage = error.response?.data?.message || "Login failed. Please try again.";
+      toast.error(errorMessage);
     } finally {
       set({ isLoggingIn: false });
     }
@@ -82,24 +84,54 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
+  // ✅ FIXED: Better socket connection with error handling
   connectSocket: () => {
-    const { authUser } = get();
-    if (!authUser || get().socket?.connected) return;
+    const { authUser, socket } = get();
+    
+    // Don't connect if no user or already connected
+    if (!authUser || socket?.connected) return;
 
-    const socket = io(BASE_URL, {
+    console.log("Connecting socket for user:", authUser._id);
+
+    const newSocket = io(SOCKET_BASE_URL, {
       query: {
         userId: authUser._id,
       },
+      // ✅ FIXED: Better connection options
+      transports: ['websocket', 'polling'],
+      timeout: 10000,
     });
-    socket.connect();
 
-    set({ socket: socket });
+    // ✅ FIXED: Socket event listeners
+    newSocket.on("connect", () => {
+      console.log("Socket connected successfully:", newSocket.id);
+      set({ socket: newSocket });
+    });
 
-    socket.on("getOnlineUsers", (userIds) => {
+    newSocket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error);
+      toast.error("Connection failed. Please try again.");
+    });
+
+    newSocket.on("getOnlineUsers", (userIds) => {
+      console.log("Online users updated:", userIds);
       set({ onlineUsers: userIds });
     });
+
+    newSocket.on("disconnect", (reason) => {
+      console.log("Socket disconnected:", reason);
+    });
+
+    // ✅ FIXED: Set socket immediately for typing events
+    set({ socket: newSocket });
   },
+
   disconnectSocket: () => {
-    if (get().socket?.connected) get().socket.disconnect();
+    const socket = get().socket;
+    if (socket?.connected) {
+      console.log("Disconnecting socket...");
+      socket.disconnect();
+      set({ socket: null });
+    }
   },
 }));
