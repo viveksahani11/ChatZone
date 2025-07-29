@@ -7,7 +7,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:5173"], // ✅ FIXED: Added both ports
+    origin: ["http://localhost:3000", "http://localhost:5173"], // ✅ EXISTING: Both ports
     methods: ["GET", "POST"],
   },
 });
@@ -28,13 +28,36 @@ io.on("connection", (socket) => {
   // io.emit() is used to send events to all the connected clients
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-  // ✅ TYPING INDICATORS
+  // ✅ EXISTING: TYPING INDICATORS (unchanged)
   socket.on("typing", ({ receiverId, isTyping }) => {
     const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) {
       socket.to(receiverSocketId).emit("userTyping", {
         senderId: userId,
         isTyping
+      });
+    }
+  });
+
+  // ✅ NEW: Handle message deletion events (optional - controller handles this directly)
+  socket.on("messageDeleted", ({ messageId, receiverId, deletedForEveryone, deletedFor }) => {
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    if (receiverSocketId) {
+      socket.to(receiverSocketId).emit("messageDeleted", {
+        messageId,
+        deletedForEveryone,
+        deletedFor
+      });
+    }
+  });
+
+  // ✅ NEW: Handle chat clear events (optional - controller handles this directly)
+  socket.on("chatCleared", ({ receiverId }) => {
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    if (receiverSocketId) {
+      socket.to(receiverSocketId).emit("chatCleared", {
+        clearedBy: userId,
+        clearedFor: receiverId
       });
     }
   });

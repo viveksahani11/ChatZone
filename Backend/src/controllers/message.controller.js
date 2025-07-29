@@ -120,3 +120,142 @@ export const sendMessage = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+// ✅ NEW: Clear entire chat between two users
+export const clearChat = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserId = req.user._id;
+
+    // Delete all messages between current user and specified user
+    await Message.deleteMany({
+      $or: [
+        { senderId: currentUserId, receiverId: userId },
+        { senderId: userId, receiverId: currentUserId },
+      ],
+    });
+
+    // Emit to both users about chat being cleared
+    const receiverSocketId = getReceiverSocketId(userId);
+    const senderSocketId = getReceiverSocketId(currentUserId);
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("chatCleared", {
+        clearedBy: currentUserId,
+        clearedFor: userId
+      });
+    }
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("chatCleared", {
+        clearedBy: currentUserId,
+        clearedFor: currentUserId
+      });
+    }
+
+    res.status(200).json({ message: "Chat cleared successfully" });
+  } catch (error) {
+    console.error("Error in clearChat controller: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// ✅ NEW: Delete message for current user only
+export const deleteMessageForMe = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const currentUserId = req.user._id;
+
+    // Find the message
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    // Add current user to deletedFor array
+    const updatedMessage = await Message.findByIdAndUpdate(
+      messageId,
+      { 
+        $addToSet: { deletedFor: currentUserId }
+      },
+      { new: true }
+    );
+
+    // Emit to current user only
+    const senderSocketId = getReceiverSocketId(currentUserId);
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messageDeleted", {
+        messageId,
+        deletedForEveryone: false,
+        deletedFor: [currentUserId]
+      });
+    }
+
+    res.status(200).json({ message: "Message deleted for you" });
+  } catch (error) {
+    console.error("Error in deleteMessageForMe controller: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// ✅ NEW: Delete message for everyone (within time limit)
+export const deleteMessageForEveryone = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const currentUserId = req.user._id;
+
+    // Find the message
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    // Check if current user is the sender
+    if (message.senderId.toString() !== currentUserId.toString()) {
+      return res.status(403).json({ error: "You can only delete your own messages" });
+    }
+
+    // Check if message is within time limit (7 minutes)
+    const now = new Date();
+    const messageTime = new Date(message.createdAt);
+    const timeDiff = (now - messageTime) / (1000 * 60); // in minutes
+
+    if (timeDiff > 7) {
+      return res.status(400).json({ error: "You can only delete messages within 7 minutes" });
+    }
+
+    // Mark message as deleted for everyone
+    const updatedMessage = await Message.findByIdAndUpdate(
+      messageId,
+      { 
+        deletedForEveryone: true,
+        text: "This message was deleted",
+        image: null
+      },
+      { new: true }
+    );
+
+    // Emit to both sender and receiver
+    const receiverSocketId = getReceiverSocketId(message.receiverId);
+    const senderSocketId = getReceiverSocketId(currentUserId);
+
+    const deleteEvent = {
+      messageId,
+      deletedForEveryone: true,
+      deletedFor: []
+    };
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("messageDeleted", deleteEvent);
+    }
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messageDeleted", deleteEvent);
+    }
+
+    res.status(200).json({ message: "Message deleted for everyone" });
+  } catch (error) {
+    console.error("Error in deleteMessageForEveryone controller: ", error.message);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
